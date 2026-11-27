@@ -46,5 +46,6 @@ On iPhone, open the URL in Safari and rotate to landscape. For full screen: Shar
 - `index.html` — HUD/title markup, import map pinning `three@0.160.0` from jsDelivr.
 - `style.css` — HUD, touch controls, safe-area handling.
 - `game.js` — one ES module, in banner-commented sections: `[CORE]`, `[WORLD]`, `[PLAYER]`, `[INPUT]`, `[COMBAT]`, `[SEA]`, `[BOSS/FX]`.
+  - `[EXPLORE]`: 12 collectible **Aurora Shards** (cyan minimap dots) — XP + full heal each; find all for boosted energy regen. Tidal Dash damages enemies it passes through; kills refund HP/energy. Surfaces use procedural canvas textures.
   - New zone: extend `rawHeight()` and `zoneAt()`.
   - New creature: add a row to `TYPES` (stats + `build()`), then `addSpawns('key', count, placementFilter)`.

@@ -38,6 +38,14 @@ const G={sph:new THREE.SphereGeometry(1,8,6),cone:new THREE.ConeGeometry(0.5,1,6
 G.ring.rotateX(-Math.PI/2);G.disc.rotateX(-Math.PI/2);
 const mat=(c,o={})=>new THREE.MeshLambertMaterial({color:c,flatShading:true,...o});
 const bmat=(c,o={})=>new THREE.MeshBasicMaterial({color:c,...o});
+// Procedural canvas textures (no image files): snow grain, cracked ice, water caustics
+function makeTex(draw,rep=1,size=128){const c=document.createElement('canvas');c.width=c.height=size;draw(c.getContext('2d'),size);
+  const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(rep,rep);t.colorSpace=THREE.SRGBColorSpace;return t;}
+const snowTex=makeTex((g,n)=>{g.fillStyle='#fff';g.fillRect(0,0,n,n);for(let i=0;i<700;i++){g.fillStyle=i%9?'rgba(140,185,220,.22)':'rgba(90,150,200,.35)';const r=1+Math.random()*2.5;g.fillRect(Math.random()*n,Math.random()*n,r,r);}
+  g.strokeStyle='rgba(120,175,215,.3)';for(let i=0;i<7;i++){g.beginPath();g.arc(Math.random()*n,Math.random()*n,10+Math.random()*24,0,2+Math.random()*2);g.stroke();}},56);
+const iceTex=makeTex((g,n)=>{g.fillStyle='#f2fbff';g.fillRect(0,0,n,n);g.lineWidth=2;for(let i=0;i<14;i++){g.strokeStyle=i%2?'rgba(70,150,210,.55)':'rgba(255,255,255,.9)';let x=Math.random()*n,y=Math.random()*n;g.beginPath();g.moveTo(x,y);
+  for(let k=0;k<5;k++){x+=(Math.random()-.5)*50;y+=(Math.random()-.5)*50;g.lineTo(x,y);}g.stroke();}},2);
+const waterTex=makeTex((g,n)=>{g.fillStyle='#cfeeff';g.fillRect(0,0,n,n);g.lineWidth=3;g.strokeStyle='rgba(255,255,255,.75)';for(let i=0;i<16;i++){g.beginPath();g.ellipse(Math.random()*n,Math.random()*n,8+Math.random()*18,4+Math.random()*8,Math.random()*3,0,6.3);g.stroke();}},36);
 function part(parent,geo,m,x,y,z,sx=1,sy=sx,sz=sx){const o=new THREE.Mesh(geo,m);o.position.set(x,y,z);o.scale.set(sx,sy,sz);o.userData.m=m;parent.add(o);return o;}
 
 // Global state + extension hooks. Later sections push into `systems` and override `actions`/`fx`.
@@ -80,7 +88,7 @@ const N1=SEG+1,heights=new Float32Array(N1*N1);
     col[i*3]=c.r;col[i*3+1]=c.g;col[i*3+2]=c.b;
   }
   geo.setAttribute('color',new THREE.BufferAttribute(col,3));
-  scene.add(new THREE.Mesh(geo,new THREE.MeshLambertMaterial({vertexColors:true,flatShading:true})));
+  scene.add(new THREE.Mesh(geo,new THREE.MeshLambertMaterial({vertexColors:true,flatShading:true,map:snowTex})));
 }
 // Bilinear ground sample matching the terrain mesh
 function groundAt(x,z){
@@ -89,12 +97,12 @@ function groundAt(x,z){
 }
 // Water: translucent animated vertex-wave plane
 const waterGeo=new THREE.PlaneGeometry(WORLD+60,WORLD+60,44,44);waterGeo.rotateX(-Math.PI/2);
-const water=new THREE.Mesh(waterGeo,new THREE.MeshPhongMaterial({color:0x2a90c4,transparent:true,opacity:0.74,flatShading:true,shininess:60,specular:0x99ddff}));
+const water=new THREE.Mesh(waterGeo,new THREE.MeshPhongMaterial({color:0x2a90c4,transparent:true,opacity:0.74,flatShading:true,map:waterTex,shininess:60,specular:0x99ddff}));
 scene.add(water);
 // Icebergs (instanced, also circle colliders) + crystals (instanced, decorative glow)
 const obstacles=[];
 {
-  const n=46,im=new THREE.InstancedMesh(G.dode,mat(0xcdeeff),n),m4=new THREE.Matrix4(),q=new THREE.Quaternion(),e=new THREE.Euler(),s=new THREE.Vector3(),p=new THREE.Vector3();
+  const n=46,im=new THREE.InstancedMesh(G.dode,mat(0xcdeeff,{map:iceTex}),n),m4=new THREE.Matrix4(),q=new THREE.Quaternion(),e=new THREE.Euler(),s=new THREE.Vector3(),p=new THREE.Vector3();
   let k=0,guard=0;
   while(k<n&&guard++<999){const a=rr(0,TAU),d=rr(16,182),x=Math.cos(a)*d,z=Math.sin(a)*d;
     if(Math.hypot(x-BOSS_LAIR.x,z-BOSS_LAIR.z)<34||floes.some(f=>Math.hypot(x-f.x,z-f.z)<f.r+5))continue;
@@ -489,6 +497,7 @@ const mp=v=>(v+HALF)/WORLD*192;let mapT=0;
 function drawMap(){
   mctx.clearRect(0,0,192,192);mctx.drawImage(mapBase,0,0,192,192);
   mctx.fillStyle='#ffe066';for(const t of totems)mctx.fillRect(mp(t.x)-3,mp(t.z)-3,6,6);
+  mctx.fillStyle='#5ff';for(const k of pickups)if(!k.got){mctx.beginPath();mctx.arc(mp(k.x),mp(k.z),3,0,TAU);mctx.fill();}
   mctx.strokeStyle='#c58bff';mctx.lineWidth=3;mctx.beginPath();mctx.arc(mp(BOSS_LAIR.x),mp(BOSS_LAIR.z),9,0,TAU);mctx.stroke();
   for(const e of enemies){if(e.dead)continue;mctx.fillStyle=e.type.boss?'#c58bff':'#ff4a5a';const r=e.type.boss?6:3.5;mctx.beginPath();mctx.arc(mp(e.pos.x),mp(e.pos.z),r,0,TAU);mctx.fill();}
   const p=player;mctx.save();mctx.translate(mp(p.pos.x),mp(p.pos.z));mctx.rotate(-p.yaw);mctx.fillStyle='#fff';mctx.strokeStyle='#024';mctx.lineWidth=2;
@@ -505,3 +514,31 @@ systems.push(dt=>{
   const p=player;if(p.dashT>0)fx.burst(p.pos.x,p.pos.y+.6,p.pos.z,0x8fdcff,2,3);
   else if(p.swim&&Math.hypot(p.vx,p.vz)>3&&Math.random()<0.3)fx.burst(p.pos.x,0.1,p.pos.z,0xffffff,1,2);
 });
+
+// ======================= [EXPLORE] Aurora Shards (collectibles), dash strikes, kill rewards =======================
+// 12 Aurora Shards hidden across both zones (cyan dots on the minimap). Each grants XP + a full heal;
+// finding all of them permanently boosts energy regen. Progress is saved.
+const pickups=[],shardGlow=bmat(0x7fffe0),haloMat=bmat(0x7fffe0,{transparent:true,opacity:0.35,depthWrite:false});
+let gotSet=[];try{gotSet=JSON.parse(localStorage.getItem('frostbound_shards')||'[]')||[];}catch(_){}
+{let guard=0;const spots=floes.slice(1,7).map(f=>[f.x,f.z]);
+  while(spots.length<12&&guard++<500){const a=rr(0,TAU),d=rr(30,180),x=Math.cos(a)*d,z=Math.sin(a)*d;
+    if(obstacles.some(o=>Math.hypot(x-o.x,z-o.z)<o.r+2)||spots.some(s=>Math.hypot(x-s[0],z-s[1])<40))continue;spots.push([x,z]);}
+  spots.forEach(([x,z],i)=>{const g=new THREE.Group(),y=Math.max(groundAt(x,z),0)+1.4;g.position.set(x,y,z);
+    part(g,G.oct,shardGlow,0,0,0,.5,.9,.5);part(g,G.ring,haloMat,0,-1.2,0,1.6);scene.add(g);
+    const k={x,z,y,g,got:gotSet.includes(i),i};g.visible=!k.got;pickups.push(k);});}
+const shardCount=()=>pickups.filter(k=>k.got).length;
+const dashHit=new Set();
+systems.push(dt=>{
+  const p=player,t=game.time;
+  waterTex.offset.set(t*0.006,t*0.004);
+  for(const k of pickups){if(k.got)continue;k.g.rotation.y=t*2;k.g.position.y=k.y+Math.sin(t*2+k.i)*0.25;
+    if(Math.hypot(p.pos.x-k.x,p.pos.z-k.z)<2.4){k.got=true;k.g.visible=false;gotSet.push(k.i);try{localStorage.setItem('frostbound_shards',JSON.stringify(gotSet));}catch(_){}
+      const n=shardCount();p.hp=p.maxHp;p.en=p.maxEn;fx.burst(k.x,k.y,k.z,0x7fffe0,40,10);fx.sfx('level');
+      toast(n>=pickups.length?'All Aurora Shards found! Energy surges':'Aurora Shard '+n+'/'+pickups.length);gainXP(25);}}
+  if(shardCount()>=pickups.length)p.en=Math.min(p.maxEn,p.en+dt*8);
+  // Tidal Dash now strikes every enemy it passes through
+  if(p.dashT>0){for(const e of enemies){if(e.dead||dashHit.has(e))continue;const dx=e.pos.x-p.pos.x,dz=e.pos.z-p.pos.z,d=Math.hypot(dx,dz)||1;
+    if(d<e.type.radius+1.8){dashHit.add(e);hitEnemy(e,14*dmgMul(),dx/d,dz/d,false);}}}else if(dashHit.size)dashHit.clear();
+});
+// Kills refund a little HP + energy so aggressive play is rewarded
+{const g0=gainXP;gainXP=n=>{const p=player;if(!p.dead){p.hp=Math.min(p.maxHp,p.hp+p.maxHp*0.06);p.en=Math.min(p.maxEn,p.en+12);}g0(n);};}
