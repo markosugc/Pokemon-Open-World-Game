@@ -450,3 +450,58 @@ gainXP=n=>{const p=player;p.xp+=n;let up=false;while(p.xp>=xpNeed()){p.xp-=xpNee
   if(up){applyLevel();p.hp=p.maxHp;p.en=p.maxEn;toast('Level '+p.lvl+'!');fx.sfx('level');fx.burst(p.pos.x,p.pos.y+1,p.pos.z,0xfff2a0,40,10);
     const f=$('flash');f.style.opacity=0.8;setTimeout(()=>f.style.opacity=0,180);}
   save();};
+
+// ======================= [BOSS/FX] Aurora Leviathan, particles, numbers, minimap, audio =======================
+const BM={g:mat(0x49e6a5,{emissive:0x0c5a3a}),p:mat(0xa46bff,{emissive:0x3a1a7a}),h:mat(0xeafff6,{emissive:0x226655})};
+TYPES.leviathan={name:'Aurora Leviathan',boss:true,hp:460,speed:6,aggro:40,range:15,windup:1.05,recover:1.5,dmg:24,xp:220,sea:true,radius:3.2,tele:7,kind:'boss',
+  lungeSpeed:27,lungeTime:.7,respawn:120,swimY:-0.2,
+  build(g){for(let i=0;i<9;i++){const s=2.4-i*.2;part(g,G.sph,i%2?BM.p:BM.g,0,1.2,-i*2.3,s,s*.85,s*1.2);if(i%2===0)part(g,G.cone,BM.h,0,1.2+s,-i*2.3,1,2,.4);}
+    part(g,G.cone,BM.h,1,3.4,1,.7,2.4,.7).rotation.z=-.5;part(g,G.cone,BM.h,-1,3.4,1,.7,2.4,.7).rotation.z=.5;
+    part(g,G.sph,EM.eye,1,1.9,2.3,.3);part(g,G.sph,EM.eye,-1,1.9,2.3,.3);},
+  anim(e,t){const c=e.body.children;let k=0;for(let i=0;i<9;i++){const x=Math.sin(t*2.2-i*.6)*0.35*i;c[k++].position.x=x;if(i%2===0)c[k++].position.x=x;}}};
+{const sp={type:'leviathan',x:BOSS_LAIR.x,z:BOSS_LAIR.z,timer:0};spawns.push(sp);makeEnemy(sp);}
+const bossE=enemies[enemies.length-1],bossEl=$('boss'),bossHp=$('bosshp');
+// Particle pool (one Points draw call)
+const PN=360,pPos=new Float32Array(PN*3).fill(-999),pCol=new Float32Array(PN*3),pVel=new Float32Array(PN*3),pLife=new Float32Array(PN);let pNext=0;
+const pGeo=new THREE.BufferGeometry();pGeo.setAttribute('position',new THREE.BufferAttribute(pPos,3));pGeo.setAttribute('color',new THREE.BufferAttribute(pCol,3));
+const pPts=new THREE.Points(pGeo,new THREE.PointsMaterial({size:0.42,vertexColors:true,transparent:true,depthWrite:false}));pPts.frustumCulled=false;scene.add(pPts);
+const pc=new THREE.Color();
+fx.burst=(x,y,z,color,n=10,speed=6)=>{pc.setHex(color);for(let i=0;i<n;i++){const k=pNext*3;pNext=(pNext+1)%PN;
+  pPos[k]=x;pPos[k+1]=y;pPos[k+2]=z;pCol[k]=pc.r;pCol[k+1]=pc.g;pCol[k+2]=pc.b;
+  const a=Math.random()*TAU,s=speed*(0.4+Math.random()*0.6);pVel[k]=Math.cos(a)*s;pVel[k+1]=2+Math.random()*speed*0.7;pVel[k+2]=Math.sin(a)*s;pLife[k/3]=0.4+Math.random()*0.4;}};
+// Floating damage numbers (DOM pool, projected once at spawn)
+const numPool=[];for(let i=0;i<14;i++){const d=document.createElement('div');d.className='num';d.style.display='none';$('nums').appendChild(d);numPool.push(d);}let numI=0;
+fx.number=(pos,text,color='#fff',yoff=2)=>{tmpV.set(pos.x,pos.y+yoff,pos.z).project(camera);if(tmpV.z>1)return;const d=numPool[numI=(numI+1)%numPool.length];
+  d.textContent=text;d.style.color=color;d.style.left=((tmpV.x*.5+.5)*innerWidth+(Math.random()-.5)*30)+'px';d.style.top=((-tmpV.y*.5+.5)*innerHeight)+'px';
+  d.style.display='none';void d.offsetWidth;d.style.display='block';};
+// Tiny synthesized SFX (WebAudio, unlocked by the Play tap)
+let actx=null;onStart.push(()=>{try{actx=new (window.AudioContext||window.webkitAudioContext)();actx.resume();}catch(_){}});
+const SFX={swing:[520,260,.08,'triangle',.08],hit:[300,120,.09,'square',.1],heavy:[180,50,.2,'sawtooth',.16],kill:[400,900,.18,'triangle',.14],hurt:[160,70,.2,'square',.14],
+  shard:[900,1500,.12,'sine',.1],dash:[300,700,.16,'sine',.1],nova:[1200,200,.4,'sawtooth',.14],slam:[110,40,.3,'square',.16],lunge:[250,400,.1,'triangle',.06],shoot:[600,300,.12,'sine',.07],level:[520,1040,.35,'triangle',.16]};
+fx.sfx=n=>{const s=SFX[n];if(!actx||!s||actx.state!=='running')return;try{const o=actx.createOscillator(),g=actx.createGain(),t=actx.currentTime;o.type=s[3];
+  o.frequency.setValueAtTime(s[0],t);o.frequency.exponentialRampToValueAtTime(s[1],t+s[2]);g.gain.setValueAtTime(s[4],t);g.gain.exponentialRampToValueAtTime(0.001,t+s[2]);
+  o.connect(g).connect(actx.destination);o.start(t);o.stop(t+s[2]+0.02);}catch(_){}};
+// Minimap: pre-rendered terrain + live dots (player, enemies, totems, boss lair), north-up
+const mapC=$('map'),mctx=mapC.getContext('2d'),mapBase=document.createElement('canvas');mapBase.width=mapBase.height=96;
+{const c=mapBase.getContext('2d'),im=c.createImageData(96,96);for(let j=0;j<96;j++)for(let i=0;i<96;i++){const h=groundAt(-HALF+(i+.5)/96*WORLD,-HALF+(j+.5)/96*WORLD),k=(j*96+i)*4;
+  const v=h>0.3?[240,250,255]:h>-0.8?[150,210,240]:[30,90,150];im.data[k]=v[0];im.data[k+1]=v[1];im.data[k+2]=v[2];im.data[k+3]=h>0.3?235:170;}c.putImageData(im,0,0);}
+const mp=v=>(v+HALF)/WORLD*192;let mapT=0;
+function drawMap(){
+  mctx.clearRect(0,0,192,192);mctx.drawImage(mapBase,0,0,192,192);
+  mctx.fillStyle='#ffe066';for(const t of totems)mctx.fillRect(mp(t.x)-3,mp(t.z)-3,6,6);
+  mctx.strokeStyle='#c58bff';mctx.lineWidth=3;mctx.beginPath();mctx.arc(mp(BOSS_LAIR.x),mp(BOSS_LAIR.z),9,0,TAU);mctx.stroke();
+  for(const e of enemies){if(e.dead)continue;mctx.fillStyle=e.type.boss?'#c58bff':'#ff4a5a';const r=e.type.boss?6:3.5;mctx.beginPath();mctx.arc(mp(e.pos.x),mp(e.pos.z),r,0,TAU);mctx.fill();}
+  const p=player;mctx.save();mctx.translate(mp(p.pos.x),mp(p.pos.z));mctx.rotate(-p.yaw);mctx.fillStyle='#fff';mctx.strokeStyle='#024';mctx.lineWidth=2;
+  mctx.beginPath();mctx.moveTo(0,10);mctx.lineTo(6,-6);mctx.lineTo(-6,-6);mctx.closePath();mctx.fill();mctx.stroke();mctx.restore();
+}
+systems.push(dt=>{
+  for(let i=0;i<PN;i++){if(pLife[i]<=0)continue;const k=i*3;pLife[i]-=dt;if(pLife[i]<=0){pPos[k+1]=-999;continue;}
+    pVel[k+1]-=14*dt;pPos[k]+=pVel[k]*dt;pPos[k+1]+=pVel[k+1]*dt;pPos[k+2]+=pVel[k+2]*dt;}
+  pGeo.attributes.position.needsUpdate=true;pGeo.attributes.color.needsUpdate=true;
+  if((mapT-=dt)<=0){mapT=0.12;drawMap();
+    const show=!bossE.dead&&Math.hypot(player.pos.x-bossE.pos.x,player.pos.z-bossE.pos.z)<60;bossEl.classList.toggle('hidden',!show);
+    if(show)bossHp.style.transform=`scaleX(${Math.max(0,bossE.hp/bossE.type.hp)})`;}
+  // dash + swim trails
+  const p=player;if(p.dashT>0)fx.burst(p.pos.x,p.pos.y+.6,p.pos.z,0x8fdcff,2,3);
+  else if(p.swim&&Math.hypot(p.vx,p.vz)>3&&Math.random()<0.3)fx.burst(p.pos.x,0.1,p.pos.z,0xffffff,1,2);
+});
