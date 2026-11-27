@@ -19,10 +19,13 @@
     <div class="row"><span id="lvl">Lv 1</span><div class="bar"><i id="hp"></i></div></div>
     <div class="bar sm"><i id="en"></i></div>
     <div class="bar xs"><i id="xp"></i></div>
+    <div id="stam"><i></i><i></i><i></i></div>
+    <div class="bar xs hidden" id="breathBar"><i id="breath"></i></div>
   </div>
   <div id="boss" class="hidden"><span>Aurora Leviathan</span><div class="bar"><i id="bosshp"></i></div></div>
   <canvas id="map" width="192" height="192"></canvas>
   <button id="pause">II</button>
+  <button id="almBtn">📖</button>
   <div id="toast"></div>
   <div id="stick"><i></i></div>
   <div id="btns">
@@ -30,6 +33,8 @@
     <button class="ab" id="bShard"><b>💠</b><small>Shard</small></button>
     <button class="ab" id="bDash"><b>🌊</b><small>Dash</small></button>
     <button class="ab" id="bNova"><b>❄️</b><small>Nova</small></button>
+    <button class="ab" id="bJump"><b>⤴️</b><small>Jump</small></button>
+    <button class="ab hidden" id="bDive"><b>🤿</b><small>Dive</small></button>
   </div>
   <div id="nums"></div>
 </div>
@@ -37,8 +42,9 @@
   <h1>FROSTBOUND</h1>
   <p class="sub">An Antarctic creature adventure</p>
   <button id="play">Tap to Play</button>
-  <p class="hint">Left thumb: move · Right buttons: Bite, Ice Shard, Tidal Dash, Frost Nova · Desktop: WASD + J K L Space</p>
+  <p class="hint">Left thumb: move · Right: Bite, Shard, Dash, Nova, Jump · 📖 Almanac to morph · Desktop: WASD, J K L I, Space jump, F dive, M almanac</p>
 </div>
+<div id="almanac" class="hidden"><div class="almHead"><h2>Creature Almanac</h2><button id="almClose">✕</button></div><div id="almGrid"></div></div>
 <div id="paused" class="hidden">Paused<br><small>tap to resume</small></div>
 <div id="rotate">⟳<br>Rotate your phone to landscape</div>
 <script type="module" src="game.js"></script>
