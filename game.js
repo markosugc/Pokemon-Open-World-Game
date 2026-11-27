@@ -422,3 +422,31 @@ actions.shard=()=>{if(!spend('shard'))return;const p=player;faceTarget();const f
 // Tidal Dash: burst of speed with i-frames (faster in water)
 actions.dash=()=>{if(!spend('dash'))return;const p=player,sp=p.swim?40:34;let dx=Math.sin(p.yaw),dz=Math.cos(p.yaw);
   p.dashT=0.26;p.dvx=dx*sp;p.dvz=dz*sp;p.iframes=0.45;fx.burst(p.pos.x,p.pos.y+.6,p.pos.z,0x66c8ff,16);fx.sfx('dash');};
+
+// ======================= [SEA] sea creatures, Frost Nova, XP/leveling, save =======================
+TYPES.eel={name:'Eelstorm',hp:40,speed:8.5,aggro:22,range:8.5,windup:.55,recover:1.1,dmg:11,xp:16,sea:true,radius:.9,tele:1.5,kind:'lunge',lungeSpeed:25,lungeTime:.42,circle:1.8,
+  build(g){for(let i=0;i<6;i++)part(g,G.sph,i%2?EM.eelB:EM.eel,0,.5,-i*.7,.55-i*.06,.5-i*.05,.6);part(g,G.cone,EM.eel,0,1,0,.3,.6,.3);},
+  anim(e,t){const c=e.body.children;for(let i=0;i<6;i++)c[i].position.x=Math.sin(t*7-i*.8)*0.1*i;}};
+TYPES.krill={name:'Krillcloud',hp:30,speed:4.5,aggro:24,range:15,windup:.7,recover:1.7,dmg:9,xp:14,sea:true,radius:1.1,tele:1.2,kind:'shoot',keep:8,
+  build(g){for(let i=0;i<8;i++)part(g,G.sph,EM.krill,0,0,0,.28,.22,.4);},
+  anim(e,t){const c=e.body.children;for(let i=0;i<8;i++){const a=t*2.5+i*0.785;c[i].position.set(Math.cos(a)*(.5+.3*(i%2)),.7+Math.sin(a*1.7+i)*.4,Math.sin(a)*(.5+.3*(i%3)));}}};
+addSpawns('eel',3,(x,z,g)=>g<-2.5&&farFromLair(x,z)&&Math.hypot(x,z)<165);
+addSpawns('krill',3,(x,z,g)=>g<-2.5&&farFromLair(x,z)&&Math.hypot(x,z)<165);
+// Frost Nova: AoE burst — heavy damage, knockback, slows enemies, pops hostile bubbles
+const novaRing=part(scene,G.ring,bmat(0xbff6ff,{transparent:true,opacity:0.9,depthWrite:false}),0,-50,0,1);let novaT=0;
+actions.nova=()=>{if(!spend('nova'))return;const p=player;novaT=0.45;novaRing.position.set(p.pos.x,Math.max(p.pos.y,0)+0.4,p.pos.z);
+  fx.burst(p.pos.x,p.pos.y+1,p.pos.z,0xcff8ff,45,13);fx.shake(0.5);fx.sfx('nova');
+  for(const e of enemies){if(e.dead)continue;const dx=e.pos.x-p.pos.x,dz=e.pos.z-p.pos.z,d=Math.hypot(dx,dz)||1;
+    if(d<9.5+e.type.radius){e.slow=3;hitEnemy(e,28*dmgMul(),dx/d,dz/d,true);}}
+  for(const s of shots)if(s.active&&s.hostile&&Math.hypot(s.mesh.position.x-p.pos.x,s.mesh.position.z-p.pos.z)<10)s.life=0;};
+systems.push(dt=>{if(novaT>0){novaT-=dt;const k=1-novaT/0.45;novaRing.visible=true;novaRing.scale.setScalar(1+k*9);novaRing.material.opacity=1-k;}else novaRing.visible=false;});
+// XP → level: +20 max HP and +15% damage per level. Saved to localStorage.
+xpNeed=()=>40+player.lvl*30;
+function applyLevel(){player.maxHp=100+20*(player.lvl-1);hudEl.lvl.textContent='Lv '+player.lvl;}
+function save(){try{localStorage.setItem('frostbound_save',JSON.stringify({lvl:player.lvl,xp:player.xp}));}catch(_){}}
+try{const s=JSON.parse(localStorage.getItem('frostbound_save')||'null');if(s&&s.lvl>0){player.lvl=Math.min(99,s.lvl|0);player.xp=+s.xp||0;}}catch(_){}
+applyLevel();player.hp=player.maxHp;
+gainXP=n=>{const p=player;p.xp+=n;let up=false;while(p.xp>=xpNeed()){p.xp-=xpNeed();p.lvl++;up=true;}
+  if(up){applyLevel();p.hp=p.maxHp;p.en=p.maxEn;toast('Level '+p.lvl+'!');fx.sfx('level');fx.burst(p.pos.x,p.pos.y+1,p.pos.z,0xfff2a0,40,10);
+    const f=$('flash');f.style.opacity=0.8;setTimeout(()=>f.style.opacity=0,180);}
+  save();};
