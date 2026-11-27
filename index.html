@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Frostbound">
+<meta name="theme-color" content="#0b2a4a">
+<title>Frostbound</title>
+<link rel="stylesheet" href="style.css">
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
+</head><body>
+<canvas id="c"></canvas>
+<div id="tint"></div><div id="hurt"></div><div id="flash"></div>
+<div id="hud" class="hidden">
+  <div id="zoneL"></div><div id="zoneR"></div>
+  <div id="bars">
+    <div class="row"><span id="lvl">Lv 1</span><div class="bar"><i id="hp"></i></div></div>
+    <div class="bar sm"><i id="en"></i></div>
+    <div class="bar xs"><i id="xp"></i></div>
+  </div>
+  <div id="boss" class="hidden"><span>Aurora Leviathan</span><div class="bar"><i id="bosshp"></i></div></div>
+  <canvas id="map" width="192" height="192"></canvas>
+  <button id="pause">II</button>
+  <div id="toast"></div>
+  <div id="stick"><i></i></div>
+  <div id="btns">
+    <button class="ab" id="bAtk"><b>🦷</b><small>Bite</small></button>
+    <button class="ab" id="bShard"><b>💠</b><small>Shard</small></button>
+    <button class="ab" id="bDash"><b>🌊</b><small>Dash</small></button>
+    <button class="ab" id="bNova"><b>❄️</b><small>Nova</small></button>
+  </div>
+  <div id="nums"></div>
+</div>
+<div id="title">
+  <h1>FROSTBOUND</h1>
+  <p class="sub">An Antarctic creature adventure</p>
+  <button id="play">Tap to Play</button>
+  <p class="hint">Left thumb: move · Right buttons: Bite, Ice Shard, Tidal Dash, Frost Nova · Desktop: WASD + J K L Space</p>
+</div>
+<div id="paused" class="hidden">Paused<br><small>tap to resume</small></div>
+<div id="rotate">⟳<br>Rotate your phone to landscape</div>
+<script type="module" src="game.js"></script>
+</body></html>
