@@ -277,3 +277,148 @@ function frame(now){
   renderer.render(scene,camera);
 }
 requestAnimationFrame(frame);
+
+// ======================= [COMBAT] =======================
+// Enemy TYPES table: add a row + a build() to create a new creature. `kind` selects the attack:
+//   lunge (dash at player), slam (AoE after telegraph), shoot (projectile), boss (alternates patterns).
+const whiteMat=bmat(0xffffff),teleMat=bmat(0xff3b3b,{transparent:true,opacity:0.75,depthWrite:false}),teleFill=bmat(0xff5a3b,{transparent:true,opacity:0.3,depthWrite:false});
+const hpMat=new THREE.SpriteMaterial({color:0xff4a5a,depthTest:false});
+const EM={mite:mat(0xe9f6ff),miteS:mat(0x86c8ff),eye:mat(0x16223a),wal:mat(0x7f93a8),rock:mat(0x55677d),tusk:mat(0xfff7e0),
+  eel:mat(0xf2e24a,{emissive:0x554400}),eelB:mat(0x2bb6a8),krill:mat(0xff8fb0,{emissive:0x551525})};
+const TYPES={
+  snowmite:{name:'Snowmite',hp:24,speed:7.5,aggro:18,range:3.2,windup:.4,recover:.9,dmg:6,xp:8,sea:false,radius:.7,tele:1.3,kind:'lunge',lungeSpeed:17,lungeTime:.25,
+    build(g){part(g,G.sph,EM.mite,0,.6,0,.6,.5,.7);for(let i=0;i<4;i++)part(g,G.cone,EM.miteS,(i%2?.3:-.3),1.05,(i<2?.25:-.25),.3,.6,.3);
+      part(g,G.sph,EM.eye,.22,.7,.6,.1);part(g,G.sph,EM.eye,-.22,.7,.6,.1);}},
+  walrus:{name:'Crag Walrus',hp:95,speed:3.3,aggro:16,range:4.4,windup:1,recover:1.5,dmg:20,xp:30,sea:false,radius:1.8,tele:5.8,kind:'slam',
+    build(g){part(g,G.sph,EM.wal,0,1.3,0,1.6,1.3,2.1);part(g,G.sph,EM.wal,0,1.7,1.9,1,.95,1);part(g,G.dode,EM.rock,0,2.5,-.3,1.1,.8,1.3);
+      part(g,G.cone,EM.tusk,.4,1,2.6,.3,1.1,.3).rotation.x=Math.PI;part(g,G.cone,EM.tusk,-.4,1,2.6,.3,1.1,.3).rotation.x=Math.PI;
+      part(g,G.sph,EM.eye,.45,2.1,2.6,.12);part(g,G.sph,EM.eye,-.45,2.1,2.6,.12);}},
+};
+const enemies=[],spawns=[];
+function makeEnemy(sp){
+  const T=TYPES[sp.type],mesh=new THREE.Group(),body=new THREE.Group();mesh.add(body);T.build(body);
+  const ring=part(mesh,G.ring,teleMat,0,.15,0,T.tele),fill=part(mesh,G.disc,teleFill,0,.12,0,T.tele);ring.visible=fill.visible=false;
+  const bar=new THREE.Sprite(hpMat);bar.position.y=T.radius*2+1.2;bar.visible=false;mesh.add(bar);
+  scene.add(mesh);
+  const e={type:T,sp,mesh,body,ring,fill,bar,pos:mesh.position,home:{x:sp.x,z:sp.z}};enemies.push(e);resetEnemy(e);return e;
+}
+function resetEnemy(e){const T=e.type;e.hp=T.hp;e.state='idle';e.t=rr(0,2);e.dead=false;e.kx=e.kz=0;e.flash=0;e.slow=0;e.lunge=0;e.circ=0;e.pat=0;e.yaw=rr(0,TAU);
+  e.wx=e.home.x;e.wz=e.home.z;e.pos.set(e.home.x,T.sea?-0.4:groundAt(e.home.x,e.home.z),e.home.z);e.mesh.visible=true;e.bar.visible=false;e.ring.visible=e.fill.visible=false;e.mesh.scale.setScalar(1);}
+// Deterministic spawn placement: `ok(x,z,groundHeight)` filters where a type may live.
+function addSpawns(type,count,ok){let n=0,guard=0;while(n<count&&guard++<2000){const a=rr(0,TAU),d=rr(24,175),x=Math.cos(a)*d,z=Math.sin(a)*d;
+  if(!ok(x,z,groundAt(x,z))||obstacles.some(o=>Math.hypot(x-o.x,z-o.z)<o.r+3))continue;const sp={type,x,z,timer:0};spawns.push(sp);makeEnemy(sp);n++;}}
+const farFromLair=(x,z)=>Math.hypot(x-BOSS_LAIR.x,z-BOSS_LAIR.z)>50;
+addSpawns('snowmite',5,(x,z,g)=>g>0.8&&Math.hypot(x,z)<80);
+addSpawns('walrus',3,(x,z,g)=>g>0.8&&Math.hypot(x,z)>40);
+
+function moveEnemy(e,vx,vz,dt){const nx=e.pos.x+vx*dt,nz=e.pos.z+vz*dt,g=groundAt(nx,nz);
+  if((e.type.sea?g<-1:g>-0.3)&&Math.hypot(nx,nz)<BOUND){e.pos.x=nx;e.pos.z=nz;return true;}return false;}
+function setFlash(e,on){e.body.traverse(o=>{if(o.isMesh)o.material=on?whiteMat:o.userData.m;});}
+function hurtPlayer(d,fx_,fz){
+  const p=player;if(p.dead||p.iframes>0)return;
+  p.hp-=d;p.iframes=0.5;const dx=p.pos.x-fx_,dz=p.pos.z-fz,l=Math.hypot(dx,dz)||1;p.kx+=dx/l*12;p.kz+=dz/l*12;
+  fx.shake(0.5);fx.sfx('hurt');fx.burst(p.pos.x,p.pos.y+1,p.pos.z,0xff6677,8);fx.number(p.pos,'-'+Math.round(d),'#ff7080');
+  hudEl.hurt.style.opacity=1;setTimeout(()=>hudEl.hurt.style.opacity=0,150);
+  if(p.hp<=0){p.hp=0;p.dead=true;p.deadT=1.8;pm.visible=false;fx.burst(p.pos.x,p.pos.y+1,p.pos.z,0x7ff3ff,30);toast('Defeated…');}
+}
+const dmgMul=()=>1+0.15*(player.lvl-1);
+function hitEnemy(e,dmg,kx,kz,heavy){
+  if(e.dead)return;dmg=Math.round(dmg);e.hp-=dmg;e.flash=0.1;setFlash(e,true);
+  const kb=(heavy?16:8)/Math.max(1,e.type.radius);e.kx+=kx*kb;e.kz+=kz*kb;
+  if(e.state==='idle')e.state='chase';
+  e.bar.visible=!e.type.boss;e.bar.scale.set(2.2*Math.max(0,e.hp/e.type.hp),0.22,1);
+  fx.number(e.pos,dmg,heavy?'#ffe066':'#fff',e.type.radius*1.5+1);fx.burst(e.pos.x,e.pos.y+e.type.radius,e.pos.z,0xbff4ff,heavy?14:7);fx.sfx(heavy?'heavy':'hit');
+  if(heavy){fx.hitstop(0.07);fx.shake(0.35);}
+  if(e.hp<=0){e.dead=true;e.mesh.visible=false;e.sp.timer=e.type.respawn||28;fx.burst(e.pos.x,e.pos.y+1,e.pos.z,0xffffff,e.type.boss?80:24);fx.sfx('kill');
+    if(player.target===e)player.target=null;gainXP(e.type.xp);if(e.type.boss){toast('Aurora Leviathan defeated!');fx.shake(1);}}
+}
+// Hostile + friendly projectiles (pooled)
+const shots=[],shardMat=mat(0x9ff6ff,{emissive:0x2aa7e8}),bubbleMat=mat(0xff9ad0,{emissive:0x7a1f50,transparent:true,opacity:0.85});
+function spawnShot(x,y,z,vx,vz,dmg,hostile,life=1.3,target=null){
+  let s=shots.find(s=>!s.active&&s.hostile===hostile);
+  if(!s){const m=hostile?part(scene,G.sph,bubbleMat,0,0,0,0.55):part(scene,G.oct,shardMat,0,0,0,0.3,0.3,0.9);s={mesh:m,hostile};shots.push(s);}
+  s.active=true;s.mesh.visible=true;s.mesh.position.set(x,y,z);s.vx=vx;s.vz=vz;s.dmg=dmg;s.life=life;s.target=target;return s;
+}
+function doAttack(e,ux,uz,dist){
+  const T=e.type;
+  if(T.kind==='lunge'||(T.kind==='boss'&&e.pat===1)){e.lunge=T.lungeTime;e.lvx=ux*T.lungeSpeed;e.lvz=uz*T.lungeSpeed;e.hitDone=false;fx.sfx('lunge');}
+  else if(T.kind==='slam'){if(dist<T.tele)hurtPlayer(T.dmg,e.pos.x,e.pos.z);fx.burst(e.pos.x,e.pos.y+.3,e.pos.z,0xffffff,26,9);fx.shake(dist<20?0.55:0.15);fx.sfx('slam');}
+  else if(T.kind==='shoot'){spawnShot(e.pos.x,0.5,e.pos.z,ux*12,uz*12,T.dmg,true,2.4);fx.sfx('shoot');}
+  else if(T.kind==='boss'){const n=e.hp<T.hp*0.5?16:10,o=rr(0,TAU);for(let i=0;i<n;i++){const a=o+i/n*TAU;spawnShot(e.pos.x,0.5,e.pos.z,Math.sin(a)*11,Math.cos(a)*11,T.dmg*0.6,true,3);}fx.sfx('slam');fx.shake(0.3);}
+  if(T.kind==='boss')e.pat=1-e.pat;
+}
+function updateEnemy(e,dt,dx,dz,dist){
+  const T=e.type,sm=e.slow>0?0.35:1,ux=dx/(dist||1),uz=dz/(dist||1);e.slow-=dt;e.t-=dt;
+  let fyaw=e.yaw;
+  if(e.state==='idle'){
+    if(e.t<=0){e.t=rr(2,5);e.wx=e.home.x+rr(-9,9);e.wz=e.home.z+rr(-9,9);}
+    const wx=e.wx-e.pos.x,wz=e.wz-e.pos.z,wl=Math.hypot(wx,wz);
+    if(wl>1){moveEnemy(e,wx/wl*T.speed*0.35,wz/wl*T.speed*0.35,dt);fyaw=Math.atan2(wx,wz);}
+    if(dist<T.aggro&&!player.dead)e.state='chase';
+  }else if(e.state==='chase'){
+    fyaw=Math.atan2(ux,uz);
+    if(player.dead||dist>T.aggro*2.4||Math.hypot(e.pos.x-e.home.x,e.pos.z-e.home.z)>70){e.state='idle';e.t=0;}
+    else if(dist>T.range){if(!moveEnemy(e,ux*T.speed*sm,uz*T.speed*sm,dt)&&T.kind==='shoot'&&dist<T.range*1.6){e.state='windup';e.t=T.windup;}e.circ=0;}
+    else if(T.circle&&e.circ<T.circle){e.circ+=dt;moveEnemy(e,(-uz+ux*0.15)*T.speed*sm,(ux+uz*0.15)*T.speed*sm,dt);}   // circle the player before striking
+    else{e.state='windup';e.t=T.windup/sm;e.t0=e.t;}
+  }else if(e.state==='windup'){
+    fyaw=Math.atan2(ux,uz);const k=1-clamp(e.t/(e.t0||T.windup),0,1);
+    e.ring.visible=e.fill.visible=true;e.fill.scale.setScalar(Math.max(0.01,T.tele*k));e.ring.position.y=e.fill.position.y=(T.sea?0.3-e.pos.y:0.15);
+    e.mesh.scale.setScalar(1+0.12*Math.sin(k*20));
+    if(e.t<=0){e.ring.visible=e.fill.visible=false;e.mesh.scale.setScalar(1);doAttack(e,ux,uz,dist);e.state='recover';e.t=T.recover;}
+  }else{ // recover (also carries out lunges)
+    if(e.lunge>0){e.lunge-=dt;moveEnemy(e,e.lvx*sm,e.lvz*sm,dt);fyaw=Math.atan2(e.lvx,e.lvz);
+      if(!e.hitDone&&dist<T.radius+1.2){e.hitDone=true;hurtPlayer(T.dmg,e.pos.x,e.pos.z);}}
+    else if(T.keep&&dist<T.keep)moveEnemy(e,-ux*T.speed*sm,-uz*T.speed*sm,dt);
+    if(e.t<=0){e.state='chase';e.circ=0;}
+  }
+  if(Math.abs(e.kx)+Math.abs(e.kz)>0.1){moveEnemy(e,e.kx,e.kz,dt);const kd=Math.exp(-dt*7);e.kx*=kd;e.kz*=kd;}
+  e.yaw=angLerp(e.yaw,fyaw,Math.min(1,dt*8));e.mesh.rotation.y=e.yaw;
+  e.pos.y=T.sea?(T.swimY||-0.4)+Math.sin(game.time*2+e.home.x)*0.12:groundAt(e.pos.x,e.pos.z);
+  if(T.anim)T.anim(e,game.time);else e.body.position.y=e.state==='idle'?0:Math.abs(Math.sin(game.time*9+e.home.z))*0.18;
+  if(e.flash>0){e.flash-=dt;if(e.flash<=0)setFlash(e,false);}
+}
+const targetRing=part(scene,G.ring,bmat(0x7ff3ff,{transparent:true,opacity:0.9,depthWrite:false}),0,-50,0,1.5);
+systems.push(dt=>{
+  const p=player;let best=null,bs=1e9;const fx_=Math.sin(p.yaw),fz=Math.cos(p.yaw);
+  for(const e of enemies){
+    if(e.dead){e.sp.timer-=dt;if(e.sp.timer<=0&&Math.hypot(p.pos.x-e.home.x,p.pos.z-e.home.z)>35)resetEnemy(e);continue;}
+    const dx=p.pos.x-e.pos.x,dz=p.pos.z-e.pos.z,dist=Math.hypot(dx,dz);
+    if(dist>120){e.mesh.visible=false;continue;}e.mesh.visible=true;
+    updateEnemy(e,dt,dx,dz,dist);
+    // soft lock-on: nearest enemy, biased to what the player is facing
+    if(dist<18+e.type.radius){const ang=Math.acos(clamp((-dx*fx_-dz*fz)/(dist||1),-1,1));if(ang<1.9||dist<5){const s=dist+ang*4;if(s<bs){bs=s;best=e;}}}
+  }
+  p.target=best;
+  if(best){targetRing.visible=true;targetRing.position.set(best.pos.x,Math.max(best.pos.y,0)+0.2,best.pos.z);targetRing.scale.setScalar(best.type.radius+0.7+Math.sin(game.time*8)*0.1);}else targetRing.visible=false;
+  // projectiles
+  for(const s of shots){if(!s.active)continue;s.life-=dt;const m=s.mesh.position;
+    if(!s.hostile&&s.target&&!s.target.dead){const tx=s.target.pos.x-m.x,tz=s.target.pos.z-m.z,l=Math.hypot(tx,tz)||1,sp=Math.hypot(s.vx,s.vz);s.vx=lerp(s.vx,tx/l*sp,dt*8);s.vz=lerp(s.vz,tz/l*sp,dt*8);}
+    m.x+=s.vx*dt;m.z+=s.vz*dt;s.mesh.rotation.y=Math.atan2(s.vx,s.vz);
+    let done=s.life<=0;
+    if(s.hostile){if(Math.hypot(m.x-p.pos.x,m.z-p.pos.z)<1.2&&!p.dead&&p.iframes<=0){hurtPlayer(s.dmg,m.x-s.vx,m.z-s.vz);done=true;}}
+    else for(const e of enemies){if(!e.dead&&Math.hypot(m.x-e.pos.x,m.z-e.pos.z)<e.type.radius+0.8){const l=Math.hypot(s.vx,s.vz);hitEnemy(e,s.dmg,s.vx/l,s.vz/l,false);done=true;break;}}
+    if(done){s.active=false;s.mesh.visible=false;fx.burst(m.x,m.y,m.z,s.hostile?0xff9ad0:0x9ff6ff,6);}
+  }
+  slash.visible=p.atkAnim>0.08;if(slash.visible)slash.position.copy(p.pos).y+=0.9;
+});
+// --- Player abilities ---
+const slash=new THREE.Mesh(new THREE.TorusGeometry(2.4,0.13,4,12,Math.PI*0.9),bmat(0xe8fbff,{transparent:true,opacity:0.85}));slash.visible=false;scene.add(slash);
+const faceTarget=()=>{const p=player,t=p.target;if(t)p.yaw=Math.atan2(t.pos.x-p.pos.x,t.pos.z-p.pos.z);};
+const spend=k=>{const p=player;if(p.dead||cds[k]>0||p.en<cost[k])return false;p.en-=cost[k];cds[k]=cdMax[k];return true;};
+// Attack: 3-hit ice-bite combo, third bite is heavy (hit-stop + big knockback)
+actions.attack=()=>{
+  const p=player;if(p.dead||cds.atk>0||p.dashT>0)return;
+  cds.atk=0.3;p.combo=(game.time-p.lastAtk<0.85)?(p.combo+1)%3:0;p.lastAtk=game.time;faceTarget();
+  const fx_=Math.sin(p.yaw),fz=Math.cos(p.yaw),heavy=p.combo===2;p.kx+=fx_*7;p.kz+=fz*7;p.atkAnim=0.2;
+  slash.rotation.set(Math.PI/2,0,0.05*Math.PI-p.yaw);slash.scale.setScalar(heavy?1.3:1);fx.sfx('swing');
+  for(const e of enemies){if(e.dead)continue;const dx=e.pos.x-p.pos.x,dz=e.pos.z-p.pos.z,d=Math.hypot(dx,dz);
+    if(d>(heavy?4.4:3.8)+e.type.radius)continue;if((dx*fx_+dz*fz)/(d||1)<0.15&&d>1.6+e.type.radius)continue;
+    hitEnemy(e,(heavy?20:10)*dmgMul(),fx_,fz,heavy);}
+};
+// Ice Shard: homing projectile at the locked target
+actions.shard=()=>{if(!spend('shard'))return;const p=player;faceTarget();const fx_=Math.sin(p.yaw),fz=Math.cos(p.yaw);
+  spawnShot(p.pos.x+fx_,Math.max(p.pos.y,0)+0.9,p.pos.z+fz,fx_*32,fz*32,16*dmgMul(),false,1.2,p.target);fx.sfx('shard');};
+// Tidal Dash: burst of speed with i-frames (faster in water)
+actions.dash=()=>{if(!spend('dash'))return;const p=player,sp=p.swim?40:34;let dx=Math.sin(p.yaw),dz=Math.cos(p.yaw);
+  p.dashT=0.26;p.dvx=dx*sp;p.dvz=dz*sp;p.iframes=0.45;fx.burst(p.pos.x,p.pos.y+.6,p.pos.z,0x66c8ff,16);fx.sfx('dash');};
